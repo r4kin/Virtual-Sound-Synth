@@ -1,0 +1,9 @@
+﻿  main.cpp
+C:\projects\synthesizer project\SoundBox\SoundBox\soundBox.h(87,18): warning C4244: 'initializing': conversion from '__int64' to 'int', possible loss of data
+C:\projects\synthesizer project\SoundBox\SoundBox\soundBox.h(68): message : while compiling class template member function 'bool soundBox<short>::Create(std::wstring,unsigned int,unsigned int,unsigned int,unsigned int)'
+C:\projects\synthesizer project\SoundBox\SoundBox\soundBox.h(59): message : see reference to function template instantiation 'bool soundBox<short>::Create(std::wstring,unsigned int,unsigned int,unsigned int,unsigned int)' being compiled
+C:\projects\synthesizer project\SoundBox\SoundBox\main.cpp(23): message : see reference to class template instantiation 'soundBox<short>' being compiled
+C:\projects\synthesizer project\SoundBox\SoundBox\soundBox.h(215,1): warning C4312: 'type cast': conversion from 'DWORD' to 'soundBox<short> *' of greater size
+C:\projects\synthesizer project\SoundBox\SoundBox\soundBox.h(214): message : while compiling class template member function 'void soundBox<short>::waveOutProcWrap(HWAVEOUT,UINT,DWORD,DWORD,DWORD)'
+C:\projects\synthesizer project\SoundBox\SoundBox\soundBox.h(98): message : see reference to function template instantiation 'void soundBox<short>::waveOutProcWrap(HWAVEOUT,UINT,DWORD,DWORD,DWORD)' being compiled
+  SoundBox.vcxproj -> C:\projects\synthesizer project\SoundBox\x64\Debug\SoundBox.exe

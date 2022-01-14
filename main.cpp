@@ -1,3 +1,5 @@
+//program needs to run on win32 platform
+
 #include <iostream>
 using namespace std;
 
@@ -35,14 +37,25 @@ int main() {
 
     //12 notes per octave. 
     double octaveBaseF = 110.0; //440hz. When you double your frequency, you move up on octave
-    double root12 = pow(2.0, 1.0 / 12.0);
+    double twoRoot12 = pow(2.0, 1.0 / 12.0);
      
     while (1) {
         //keyboard initialization. 0x8000 highest bit.
-        if (GetAsyncKeyState('A') & 0x8000)
-            frequencyOut = 440.0;
-        else
+
+        //piano keyboard implementation
+        bool keyPress = false;
+
+        for (int i = 0; i < 15; i++) {
+            //Mapping piano keys onto computer keys
+            if (GetAsyncKeyState((unsigned char)("ZSXCFVGBNJMK\xbcL\xbe"[i])) & 0x8000) {
+                frequencyOut = octaveBaseF * pow(twoRoot12, i);
+                keyPress = true;
+            }
+        }
+
+        if (!keyPress) {
             frequencyOut = 0.0;
+        }
     }
 
     return 0;

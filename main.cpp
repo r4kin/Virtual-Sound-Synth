@@ -204,8 +204,8 @@ namespace synth {
             if (amp <= 0.0)
                 noteFinished = true;
 
-            FREQTYPE sound = + 1.00 * synth::oscillator(n.on - time, synth::scale(n.noteID), oSq, 100.0, 0.00001)
-                             + 0.50 * synth::oscillator(n.on - time, synth::scale(n.noteID + 12), oSq)
+            FREQTYPE sound = + 1.00 * synth::oscillator(n.on - time, synth::scale(n.noteID), oSq, 50.0, 0.00001)
+                             + 0.20 * synth::oscillator(n.on - time, synth::scale(n.noteID + 12), oSq)
                              + 0.0001 * synth::oscillator(n.on - time, synth::scale(n.noteID + 24), rando);
     
             return amp * sound * volume;
@@ -310,7 +310,6 @@ int main() {
                     }
                     else {
                         foundNote->on = currTime;
-                        foundNote->active = true;
                     }
                 }
                 else {//Released key

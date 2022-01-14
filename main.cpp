@@ -1,172 +1,258 @@
 //program needs to run on win32 platform
 
 #include <iostream>
+#include <algorithm>
+#include <list>
 using namespace std;
 
-//Accessing existing code for accessing computer audio hardware. Credit to Javidx9 on Github
+//Accessing existing code for accessing computer audio hardware. Source: Javidx9 on Github for header
 #include "soundBox.h"
+#define FREQTYPE double
 
 
 
-double fConvert(double hertz) {
-    return hertz * 2.0 * PI;
-}
+namespace synth {
+    //Convert Freq to angular velocity
 
-double oscillator(double hertz, double time, int type, double LFOFreq = 0.0, double LFOAmp = 0.0) {
-    double freq = fConvert(hertz) * time + LFOAmp * hertz * sin(fConvert(LFOFreq) * time);
-    
-    switch (type) {
-    case 0: //sin wave
-        return sin(freq);
-    case 1: //square wave
-        return sin(freq) > 0.0 ? 1.0 : -1.0;
-    //case 2: //triangular wave
-    //   return asin(sin(freq)) * 2.0 / PI);
-    case 2: //saw wave (warm)
-    {
-        double out = 0.0;
+    FREQTYPE fConvert(const FREQTYPE hertz) {
+        return hertz * 2.0 * PI;
+    }
+    struct note {
+        int noteID;
+        FREQTYPE on; 
+        FREQTYPE off;
+        bool active;
+        int channel;
 
-        for(double i = 1.0; i < 100.0; i++)
-            out += (sin(i * freq)) / i;
+        note() {
+            on = 0.0;
+            off = 0.0;
+            noteID = 0;
+            active = false;
+            channel = 0;
+        }
+    };
+
+    const int oSin = 0;
+    const int oSq = 1;
+    const int oSawA = 2;
+    const int oSawD = 3;
+    const int rando = 4;
+
+    FREQTYPE oscillator(const FREQTYPE hertz, const FREQTYPE time, const int type = oSin,
+                        const FREQTYPE LFOFreq = 0.0, const FREQTYPE LFOAmp = 0.0, FREQTYPE counter = 50.0) {
         
-        return out * (2.0 / PI);
+        FREQTYPE freq = fConvert(hertz) * time + LFOAmp * hertz * sin(fConvert(LFOFreq) * time);
+
+        switch (type) {
+        
+        case oSin: //sin wave
+            return sin(freq);
+        
+        case oSq: //square wave
+            return sin(freq) > 0 ? 1.0 : -1.0;
+         
+        //case 2: //triangular wave
+        //   return asin(sin(freq)) * 2.0 / PI);
+        
+        case oSawA: //saw wave (warm)
+        {
+            FREQTYPE out = 0.0;
+
+            for (FREQTYPE i = 1.0; i < counter; i++)
+                out += (sin(i * freq)) / i;
+
+            return out * (2.0 / PI);
+        }
+        
+        case oSawD: //optimized saw wave (harsh)
+            return (hertz * PI * fmod(time, 1.0 / hertz) - (PI / 2.0)) * (2.0 / PI);
+
+        case rando: //pseudo random
+            return ((FREQTYPE)(rand()) / (FREQTYPE)(RAND_MAX)) - 1.0;
+
+        default:
+            return 0.0;
+        }
     }
-    case 3: //optimized saw wave (harsh)
-        return (hertz * PI * fmod(time, 1.0 / hertz) - (PI / 2.0)) * (2.0 / PI);
-    
-    case 4: //pseudo random
-        return 2.0 * ((double)(rand()) / (double)(RAND_MAX)) - 1.0;
-    
-    default: 
-        return 0.0;
+
+    const int DEFAULT_SCALE = 0;
+
+    FREQTYPE scale(const int noteID, const int scaleID = DEFAULT_SCALE) {
+        switch (scaleID) {
+        case DEFAULT_SCALE: default:
+            return 256 * pow(1.0594639094, noteID);
+        }
     }
+
+    struct envelope {
+        virtual FREQTYPE getAmp(const FREQTYPE time, const FREQTYPE timeOn, const FREQTYPE timeOff) = 0;
+    };
+
+    struct envelopeADSR : public envelope {
+        FREQTYPE attackTime;
+        FREQTYPE decayTime;
+        FREQTYPE releaseTime;
+        FREQTYPE sustainedAmp;
+        FREQTYPE startAmp;
+
+
+        //Attack, Decay, Sustained, Release
+        envelopeADSR() {
+            attackTime = 0.01;
+            decayTime = 0.1;
+            releaseTime = 1.0;
+            sustainedAmp = 0.2;
+            startAmp = 1.0;
+        }
+
+        virtual FREQTYPE getAmp(const FREQTYPE time, const FREQTYPE timeOff, const FREQTYPE timeOn) {
+            FREQTYPE amp = 0.0;
+            FREQTYPE releaseAmp = 0.0;
+
+
+            if (timeOn > timeOff) { //note on
+                FREQTYPE total = time - timeOn;
+
+                //A
+                if (total <= attackTime)
+                    amp = (total / attackTime) * startAmp;
+                
+                //D
+                if (total > attackTime && total <= (attackTime + decayTime))
+                    amp = ((total - attackTime) / decayTime) * (sustainedAmp - startAmp) * startAmp;
+
+                //S
+                if (total > (attackTime + decayTime)) {
+                    amp = sustainedAmp;
+                }
+            }
+
+            else { //note off
+                //R
+                FREQTYPE total = timeOff - timeOn;
+
+                if (total < attackTime)
+                    releaseAmp = (total / attackTime) * startAmp;
+
+                if (total > attackTime && total <= (attackTime + decayTime))
+                    releaseAmp = ((total - attackTime) / decayTime) * (sustainedAmp - startAmp) + startAmp;
+
+                if (total > (attackTime + decayTime))
+                    releaseAmp = sustainedAmp;
+                
+                    amp = ((time - timeOff) / releaseTime) * (0.0 - releaseAmp) + releaseAmp;
+            }
+
+            //epsilon check for positive
+            if (amp <= 0.1) {
+                amp = 0.0;
+            }
+
+            return amp;
+        }
+    };
+
+    FREQTYPE env(const FREQTYPE time, envelope &env, const FREQTYPE timeOn, const FREQTYPE timeOff) {
+        return env.getAmp(time, timeOn, timeOff);
+    }
+
+    struct instrument {
+        FREQTYPE volume;
+        synth::envelopeADSR env;
+
+        virtual FREQTYPE sound(const FREQTYPE time, synth::note n, bool &noteFinished) = 0;
+    };
+
+    struct bell : public instrument {
+        bell() {
+            env.attackTime = 0.01;
+            env.decayTime = 1.0;
+            env.sustainedAmp = 0.0;
+            env.releaseTime = 1.0;
+
+            volume = 1.0;
+        }
+
+        virtual FREQTYPE sound(const FREQTYPE time, synth::note n, bool &noteFinished) {
+            FREQTYPE amp = synth::env(time, env, n.on, n.off);
+            
+            if (amp <= 0.0)
+                noteFinished = true; 
+
+            FREQTYPE sound = + 1.00 * synth::oscillator(n.on - time, synth::scale(n.noteID + 12), synth::oSin, 5.0, 0.001)
+                             + 0.50 * synth::oscillator(n.on - time, synth::scale(n.noteID + 24))
+                             + 0.25 * synth::oscillator(n.on - time, synth::scale(n.noteID + 36));
+
+            return amp * sound * volume;
+        }
+    };
+
+    struct harmonica : public instrument {
+        harmonica() {
+            env.attackTime = 0.05;
+            env.decayTime = 1.0;
+            env.sustainedAmp = 0.95;
+            env.releaseTime = 0.1;
+
+            volume = 1.0;
+        }
+
+        virtual FREQTYPE sound(const FREQTYPE time, synth::note n, bool& noteFinished) {
+            FREQTYPE amp = synth::env(time, env, n.on, n.off);
+
+            if (amp <= 0.0)
+                noteFinished = true;
+
+            FREQTYPE sound = + 1.00 * synth::oscillator(n.on - time, synth::scale(n.noteID), oSq, 100.0, 0.00001)
+                             + 0.50 * synth::oscillator(n.on - time, synth::scale(n.noteID + 12), oSq)
+                             + 0.0001 * synth::oscillator(n.on - time, synth::scale(n.noteID + 24), rando);
+    
+            return amp * sound * volume;
+         }
+    };
 }
 
-struct envelopeADSR {
-    double attackTime;
-    double decayTime;
-    double releaseTime;
-    double sustainedAmp;
-    double startAmp;
+vector<synth::note> vecNotes;
+mutex muxNotes; 
+synth::bell bellInst;
+synth::harmonica harmInst;
 
-    double triggerOnTime;
-    double triggerOffTime;
+// Credit to Javidx9 for following vector overload fix
+typedef bool(*lambda)(synth::note const& item);
+template<class T>
+void safe_remove(T &v, lambda f) {
+    auto n = v.begin();
+    while (n != v.end()){
+        if (!f(*n))
+            n = v.erase(n);
+        else
+            ++n;
+    }   
+}
+    
 
-    bool noteOn;
+ FREQTYPE MakeSound(int channel,FREQTYPE time) {
+    unique_lock<mutex> lm(muxNotes);
+    FREQTYPE mixOut = 0.0;
 
-    //Attack, Decay, Sustained, Release
-    envelopeADSR() {
-        attackTime = 0.01;
-        decayTime = 1.0;
-        releaseTime = 1.0;
-        sustainedAmp = 0.0;
-        startAmp = 0.1;
+    for (auto &note : vecNotes) {
+        bool noteFinished = false;
+        FREQTYPE sound = 0;
 
-        triggerOnTime = 0.0;
-        triggerOffTime = 0.0;
-        noteOn = false;
+        if (note.channel == 1)
+            sound = harmInst.sound(time, note, noteFinished) * 0.1;
+        if (note.channel == 2)
+            sound = bellInst.sound(time, note, noteFinished);
+        mixOut += sound;
+
+          if (noteFinished && note.off > note.on)
+            note.active = false;
     }
 
-    double GetAmplitude(double time) {
-        double amp = 0.0;
-        double timeTotal = time - triggerOnTime;
+    safe_remove<vector<synth::note>>(vecNotes, [](synth::note const& item) { return item.active; });
 
-        if (noteOn) {
-            //A
-            if (timeTotal <= attackTime)
-                amp = (timeTotal / attackTime) * startAmp;
-            //D
-            if(timeTotal > attackTime && timeTotal <= (attackTime+decayTime))
-                amp = ((timeTotal-attackTime)/decayTime) * (sustainedAmp - startAmp) * startAmp;
-
-            //S
-            if (timeTotal > (attackTime + decayTime)) {
-                amp = sustainedAmp;
-            }
-        }
-        else {
-            //R
-            amp = (time - triggerOffTime)/releaseTime;
-        }
-
-        //epsilon check
-        if (amp <= 0.0001) {
-            amp = 0.0;
-        }
-
-        return amp;
-    }
-
-    void NoteOn(double timeOn) {
-        triggerOnTime = timeOn;
-        noteOn = true;
-    }
-    void NoteOff(double timeOff) {
-        triggerOffTime = timeOff;
-        noteOn = false; 
-    }
-};
-
-
-struct instrument {
-    double volume;
-    envelopeADSR env;
-
-    virtual double sound(double time, double freq) = 0;
-};
-
-//double that isnt hindered by multiple threads
-atomic<double> frequencyOut = 0.0;
-//12 notes per octave. 
-double octaveBaseF = 110.0; //440hz. When you double your frequency, you move up on octave
-double twoRoot12 = pow(2.0, 1.0 / 12.0);
-envelopeADSR envelope;
-
-//instrument* voice = nullptr;
-instrument* voice = nullptr;
-
-struct bell : public instrument {
-    bell() {
-        env.attackTime = 0.01;
-        env.decayTime = 1.0;
-        env.startAmp = 1.0;
-        env.sustainedAmp = 0.0;
-        env.releaseTime = 1.0;
-    }
-
-    double sound(double time, double freq) {
-        double output = envelope.GetAmplitude(time) * (
-            + 1.0 * oscillator(freq * 2.0, time, 0, 5.0, 0.001)
-            + 0.5 * oscillator(freq * 3.0, time, 0)
-            + 0.25 * oscillator(freq * 4.0, time, 0)
-            );
-        return output;
-    }
-};
-
-struct harmonica : public instrument {
-    harmonica() {
-        env.attackTime = 0.01;
-        env.decayTime = 1.0;
-        env.startAmp = 1.0;
-        env.sustainedAmp = 0.0;
-        env.releaseTime = 1.0;
-    }
-
-    double sound(double time, double freq) {
-        double output = envelope.GetAmplitude(time) * (
-            +1.0 * oscillator(freq * 2.0, time, 0, 5.0, 0.001)
-            + 0.5 * oscillator(freq * 3.0, time, 0)
-            + 0.25 * oscillator(freq * 4.0, time, 4)
-            );
-        return output;
-    }
-};
-
-double MakeSound(double duration) {
-    //square wave function implementation of sin wave
-    double output = voice->sound(duration, frequencyOut);
-    return output * 0.4; //Set amplitude/volume
+    return mixOut * 0.2; //Set final volume
 }
 
 
@@ -181,39 +267,63 @@ int main() {
     //Sample rate must be double the maximum frequency output, which is a maximum of 20khz for human hearing. 
     //1 channel, as it is one speaker
     //512 mystery number for latency management
-    soundBox<short> sound(devices[0], 44100, 1, 8, 512);
+    //12 notes per octave. When you double your frequency, you move up on octave
 
-    voice = new bell();
+    soundBox<short> sound(devices[0], 44100, 1, 8, 512);
 
     //MakeSound function for sound instance of soundBox
     sound.SetUserFunction(MakeSound);
-     
-    bool keyPress = false;
-    int currKey = -1;
 
     while (1) {
-        //keyboard initialization. 0x8000 highest bit.
-
-        //piano keyboard implementation
-        keyPress = false;
-
+        //0x8000 highest bit
         for (int i = 0; i < 16; i++) {
             //Mapping piano keys onto computer keys
-            if (GetAsyncKeyState((unsigned char)("ZSXCFVGBNJMK\xbcL\xbe"[i])) & 0x8000) {
-                frequencyOut = octaveBaseF * pow(twoRoot12, i);
-                voice->env.NoteOn(sound.GetTime());
-                wcout << "\rNote On: " << sound.GetTime() << "s, " << frequencyOut << "hz";
-                currKey = i;
-            }
-            keyPress = true;
-        }
+            short keyState = GetAsyncKeyState((unsigned char)("ZSXCFVGBNJMK\xbcL\xbe\xbf"[i]));
+            double currTime = sound.GetTime();
 
-        if (!keyPress) {
-            if (currKey != -1) {
-                wcout << "\rNote Off: " << sound.GetTime() << "s";
-                voice->env.NoteOff(sound.GetTime());
-                currKey = -1;
+            //Check if note already exists
+            muxNotes.lock();
+            auto foundNote = find_if(vecNotes.begin(), vecNotes.end(), [&i](synth::note const& item) {
+                return item.noteID == i; });
+
+            if (foundNote == vecNotes.end()) {//Note not found
+
+                if (keyState & 0x8000) {
+                    //Create new note for new key press
+                    synth::note n;
+                    n.noteID = i;
+                    n.on = currTime;
+                    n.channel = 1;
+                    n.active = true;
+
+                    //Add this new note to vector
+                    vecNotes.emplace_back(n);
+                }
+                else {}
             }
+            else {//Note found in vector
+                if (keyState & 0x8000) {//Held key
+                    if (foundNote->off > foundNote->on) {
+                        //Key has been pressed again
+                        foundNote->off = currTime;
+                        foundNote->active = false;
+                    }
+                    else {
+                        foundNote->on = currTime;
+                        foundNote->active = true;
+                    }
+                }
+                else {//Released key
+                    if (foundNote->off < foundNote->on) {
+                        foundNote->off = currTime;
+                    }
+                    else {
+                    }
+                }
+
+            }
+
+            muxNotes.unlock();
         }
     }
 
